@@ -1,0 +1,380 @@
+---
+title: "HW2_IE360"
+output: html_document
+date: '2022-05-11'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Gözde Aygün 2018402915
+
+
+# INTRODUCTION 
+
+In this homework, we are given a data which consists of different variables, these variables are given below. Main aim of this homework is to forecast the sales of the UGS for every quarter of the 2007 with time series regression. UGS can be defined as Unleaded gasoline sale in a given quarter. To be able to forecast these values, we first need to build a model. Since this is the time series, we are required to add trend and seasonality. 
+At the following steps, we have done some variable addition with the help of lag values, their effect on the model is analyzed.
+
+Followings are the variables that can be used while building the model. 
+
+UGS: Unleaded gasoline sale in a given quarter,
+RNUV: An index indicating the rate of new unleaded gasoline using vehicles being added to the traffic in
+a quarter,
+PU: Average price (adjusted with an index) of a liter of unleaded gasoline in a quarter,
+PG: Average price (adjusted with an index) of a liter of diesel gasoline in a quarter,
+NUGV: Number of unleaded gasoline using vehicles in the traffic,
+NDGV: Number of diesel gasoline using vehicles in the traffic (per 1000 people),
+GNPA: Agriculture component of Gross National Product (adjusted with an index),
+GNPC: Commerce component of Gross National Product (adjusted with an index),
+GNP: Grand total for GNP (agriculture, commerce and other components total).
+
+
+
+
+# REQUIRED LIBRARIES
+
+Necessary packages are uploaded and made ready to use. 
+
+```{r warning=FALSE, message=FALSE}
+library(readxl)
+library(janitor)
+library(readr)
+library(tidyverse)
+library(fBasics)
+library(dplyr)
+library(data.table)
+library(writexl)
+library(scales)
+library(plyr)
+library(zoo)
+library(lubridate)
+library(ggplot2)
+library(forecast)
+library(corrplot)
+library(ggcorrplot)
+library(xts)
+
+```
+
+# DATA DERIVATION
+
+Data is deriven from the csv file and necessary changes have been made. Unnecessary rows and columns are eliminated and Quarter format is updated. By using str function, we check the validity of the data. 
+
+```{r}
+hw2_data=read.csv("/Users/gozdeaygun/Downloads/IE360_Spring22_HW2_data (1).csv")
+str(hw2_data)
+
+hw2_data=hw2_data[c(1:32),c(1:11)]
+hw2_data$Quarter <- as.yearqtr(hw2_data$Quarter, format = "%Y_Q%q")
+#hw2_data$Quarter
+
+str(hw2_data)
+
+```
+
+
+# TIME SERIES
+
+After doing some operations, we have the data we can work on. To be able to plot the time series of the UGS, we eliminated the last four rows since these are the data rows that we will make predictions. The first 28 rows is used to build time series. 
+To be able to plot the time series, we started from 2000 Q1 to 2006 Q4. Time series is plotted below. 
+
+```{r}
+hw2_data_train <- hw2_data[is.na(hw2_data$Unleaded.Gasoline.Sale..UGS.)==FALSE,]
+str(hw2_data_train)
+hw2_data_test<- hw2_data[is.na(hw2_data$Unleaded.Gasoline.Sale..UGS.)==TRUE,]
+hw2_data_ts <- ts(hw2_data_train,freq=4,start=c(2000,1))
+str(hw2_data_ts)
+
+
+ts.plot(hw2_data_ts[,c("Unleaded.Gasoline.Sale..UGS.")] , main="Unleaded Gasoline Sale (UGS) (2000 Q1 to 2006 Q4)" ,
+        ylab="Unleaded Gasoline Sale (UGS) (in 1000 m3)",xlab="Years")
+
+```
+```{r}
+decomposed_hw2_data<-decompose(hw2_data_ts[,c("Unleaded.Gasoline.Sale..UGS.")], type="additive")
+plot(decomposed_hw2_data)
+
+
+```
+
+As we can see from the plot, we have decreasing trend and the seasonality. By means of stationary, we can say that because of the decreasing trend in the data, we do not have the stationary mean however variance is stationary. 
+
+
+## Auto correlation is drawn
+
+```{r}
+AutoCorrelation <- acf(hw2_data_ts[,c("Unleaded.Gasoline.Sale..UGS.")],lag.max=28, plot = FALSE)
+plot(AutoCorrelation, xlab = "Year",ylab= "Unleaded Gasoline Sale (UGS)",main = "Autocorrelation functions of the time series UGS")
+
+```
+
+
+The plot above represents the autocorrelation of the UGS values. Dashed lines shows the critical values and as can be seen from the data, lag1 and lag4 are above the critical values. This implies that while building the model, lag1 and lag4 values should be considered. 
+
+
+# REGRESSION  
+
+Trend and seasonality are defined and added to the data. Besides, lag1 and lag4 values are found and seasonality is defined as factor while trend is numeric.  
+
+```{r}
+trend=c(1:32)
+hw2_data$trend=trend
+quartes_info=rep(1:4,8)
+hw2_data$quartes_info=quartes_info
+
+hw2_data$lagged_values_lag1= NA
+
+for(i in 1:28){
+  hw2_data$lagged_values_lag1[i+1] = hw2_data$"Unleaded.Gasoline.Sale..UGS."[i]
+}
+
+#hw2_data$lagged_values_lag1
+
+hw2_data$lagged_values_lag4= NA
+
+for(i in 1:28){
+  hw2_data$lagged_values_lag4[i+4] = hw2_data$"Unleaded.Gasoline.Sale..UGS."[i]
+}
+
+#hw2_data$lagged_values_lag4
+
+#summary(hw2_data)
+
+hw2_data$quartes_info=as.factor(hw2_data$quartes_info)
+hw2_data$trend=as.numeric(hw2_data$trend)
+
+str(hw2_data)
+
+
+```
+
+
+
+## Correlation is drawn
+
+```{r}
+hw2_data_red<- hw2_data[!is.na(hw2_data$Unleaded.Gasoline.Sale..UGS. & hw2_data$lagged_values_lag1 & hw2_data$lagged_values_lag4),]
+corr = cor(hw2_data_red[,unlist(lapply(hw2_data_red, is.numeric))])
+
+ggcorrplot(corr,
+           hc.order = TRUE,
+           type='lower',
+           lab=TRUE,
+           title = "Correlation Matrix",
+           colors = c("darkred","white","darkgreen"),
+           legend.title = "Correlation",
+)
+
+
+pairs(hw2_data)
+
+```
+Correlation matrix shows the correlation between variables. Since our aim to predict sale of the UGS, it makes sense to check correlation between UGS and other variables. Below, we are going to start building model with the backward selection method but afterwards, we will also use forward selection to reach best model. 
+
+
+
+# LINEAR REGRESSION MODELS 
+
+## MODEL1
+
+
+```{r}
+fitted_model1<- lm(Unleaded.Gasoline.Sale..UGS.~ . -Quarter,data=hw2_data[1:28,] )
+summary(fitted_model1)
+#checkresiduals(fitted_model1)
+
+```
+## Model 1 Comments 
+It is important to note, Quarter should not be added to model, so first think to do is subtracting it from the data. Since we are doing backward selection, all other variables are used. While making addition or subtraction, we will focus on the variables' significance,adjusted R^2 and Residual Standart Error values. At the beginning one of variables which have high Pr(>|t|) values will be eliminated. 
+
+
+## MODEL2
+
+```{r}
+fitted_model2<- lm(Unleaded.Gasoline.Sale..UGS. ~. -Quarter-GNP.Agriculture ,data=hw2_data[1:28,] )
+summary(fitted_model2)
+#checkresiduals(fitted_model2)
+
+```
+## Model 2 Comments 
+With this subtraction, intercept became significant and our Adjusted R^2 values is improved. Therefore, we are good to continue building model without GNP.Agriculture. 
+
+## MODEL3
+
+```{r}
+fitted_model3<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG. ,data=hw2_data[1:28,] )
+summary(fitted_model3)
+#checkresiduals(fitted_model3)
+```
+## Model 3 Comments 
+At model 3, we subtracted Price.of.Diesel.Gasoline..PG. since it has high correlation with Price.of.Unleaded.Gasoline..PU. The main reason for not subtracting PU variable is PU variable seems to important variable because of its definition. 
+
+
+## MODEL4
+```{r}
+fitted_model4<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total  ,data=hw2_data[1:28,] )
+summary(fitted_model4)
+#checkresiduals(fitted_model4)
+```
+## Model 4 Comments 
+As expected, PU variable become highly significant and our model improved. GNP Total is subtracted from the model due to the fact that its significance was low compared to other variable. With these changes, the number of significant variables is increased. 
+
+## MODEL5
+
+```{r}
+fitted_model5<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce  ,data=hw2_data[1:28,] )
+summary(fitted_model5)
+#checkresiduals(fitted_model5)
+```
+## Model 5 Comments 
+
+Model 5 performs better than the previous one. The change we have made is subtracting GNP.Commerce variable. GNP.Commerce is subtracted from the model due to the fact that its significance was low compared to other variable just like previous step.
+
+## MODEL6
+
+```{r}
+fitted_model6<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce -RNUV,data=hw2_data[1:28,] )
+summary(fitted_model6)
+#checkresiduals(fitted_model6)
+```
+## Mode6 Comments 
+
+RNUV is subtracted and the model is not improved as can be seen from the adjusted R^2 and residual standart error.
+
+
+## MODEL7
+```{r}
+
+fitted_model7<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce -RNUV-lagged_values_lag4 ,data=hw2_data[1:28,] )
+summary(fitted_model7)
+#checkresiduals(fitted_model7)
+```
+## Model 7 Comments 
+Although Model 6 does not lead to improvement, we subtracted the lag4 value from the model to see lag 4 and RNUV effects together. However, Model 5 performs better. Therefore, our final model is not found yet. 
+
+
+## MODEL 8
+
+```{r}
+
+fitted_model8<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce-lagged_values_lag4 -X..LPG.Vehicles..NLPG. ,data=hw2_data[1:28,] )
+summary(fitted_model8)
+#checkresiduals(fitted_model8)
+```
+## Model 8 Comments
+
+X..LPG.Vehicles..NLPG. variable is subtracted. Although it did not lead to improvement, X..LPG.Vehicles..NLPG. is not relevant with our UGS sales therefore, it will not be added back. 
+
+
+## MODEL 9 
+
+
+```{r}
+
+hw2_data$RNUV_lagg1<- NA
+for(i in 1:28){
+  hw2_data$RNUV_lagg1[i+1] = hw2_data$RNUV[i]
+}
+
+fitted_model9<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce-lagged_values_lag4 -X..LPG.Vehicles..NLPG. -RNUV ,data=hw2_data[1:28,] )
+summary(fitted_model9)
+#checkresiduals(fitted_model9)
+
+```
+
+### Model 9 Comments
+
+Lag value of RNUV added and actual RNUV is removed, by doing so Residual Standard Error and adjusted R^2 are improved. 
+
+## MODEL 10
+
+
+```{r}
+
+
+fitted_model10<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce-lagged_values_lag4 -X..LPG.Vehicles..NLPG. -RNUV_lagg1 -X..Unleaded.Gasoline.Vehicles..NUGV. ,data=hw2_data[1:28,] )
+summary(fitted_model10)
+#checkresiduals(fitted_model10)
+
+```
+### Model 10 Comments 
+
+Since lag1 value of RNUV and NDUV are somehow related because of their definition. X..Unleaded.Gasoline.Vehicles..NUGV. is removed and RUNV is added back. However, it did not performed well compared to previos one therefore X..Unleaded.Gasoline.Vehicles..NUGV. is decided to kept in the model. 
+
+## MODEL 11
+
+```{r}
+
+fitted_model11<- lm(Unleaded.Gasoline.Sale..UGS.~. -Quarter-GNP.Agriculture-Price.of.Diesel.Gasoline..PG.- GNP.Total -GNP.Commerce-lagged_values_lag4 -X..LPG.Vehicles..NLPG.- RNUV_lagg1 ,data=hw2_data[1:28,] )
+summary(fitted_model11)
+#checkresiduals(fitted_model11)
+
+```
+
+### Model 11 Comments 
+
+RNUV and X..Unleaded.Gasoline.Vehicles..NUGV. are added back, next iteration will be done to this model. 
+
+
+# FINAL MODEL 
+```{r}
+
+final_model12<- lm(Unleaded.Gasoline.Sale..UGS.~ +Price.of.Unleaded.Gasoline..PU. + X..Unleaded.Gasoline.Vehicles..NUGV. + X..of.Diesel.Gasoline.Vehicles..NDGV. + trend + quartes_info + lagged_values_lag1 ,data=hw2_data[1:28,] )
+summary(final_model12)
+checkresiduals(final_model12)
+plot(final_model12)
+
+```
+
+## Final Model Evaluation
+
+  With the variables we are given, the trend and seasonality factors, the above model is the best we have found. The one we have found is not guaranteed to be the best model that could be created. While building this method, we took some incentives thanks to the definitions of the variables. Besides, significance of the variables at the built model is also highly important factor to be considered. Adjusted R^2 and residual standard error are used for the comparison of the models. 
+  Finally, the best model has Adjusted R^2 value of 0.9679 and Residual Standard Error of 27090.
+  In this final model, all of the variable that used in the model are significant, therefore we can conclude that our model is good enoguh to use at prediction. 
+  
+  
+## Validity of our analysis 
+
+  1. Residual Analysis: By looking at the checkresiduals function's results, we can say that our assumptions for residuals are not satisfied in general. To have better understanding about this analysis, we have plotted the Q-Q plot. Autocorrelation of the residuals  also seems to be problematic at some degree. It is good to remember that we added lag4 to our model but it did not improved the model, therefore it kept outside of the model. 
+  2. Significance of Coefficients: While building the model, significance of Coefficients are used. Addition and subtraction decision are based on the Significance of Coefficients, and at the final model all of the variables used are significant. 
+  
+  
+
+
+## PREDICTION 
+
+
+```{r}
+pred_hw2_data=NA
+
+hw2_data_test=hw2_data
+
+
+for (i in 1:4){
+  
+  pred_hw2_data[i]=predict(final_model12,newdata=hw2_data_test[i+28,])
+  if(i < 4){
+     hw2_data$lagged_values_lag1[i+29] = pred_hw2_data[i]
+  
+  }
+}
+
+for (i in 1:4){
+  print(paste("Prediction for", hw2_data$Quarter[i+28],"is",pred_hw2_data[i]))
+ }
+```
+
+With the final model, we are able to make predictions for the the last four row of the data which are the quarters of the 2007. The results given above are the prediction we have found. 
+
+# CONCLUSION 
+
+In this homework, our main aim was to predict the UGS sales of the quarters of the 2007. To be able to achieve that, first we tried to build the best model we can reach. Before building the model, trend seasonality, lag1 and lag4 values are added the data. The best model is produced by looking at the significance levels of the variables and checking the models residuals. We chose the backward selection method, this means that at the beginning we added all of the variables to the model. With the help of criteria I mentioned above, some of the variables are removed, however at some point we are also required to use forward selection. At some step, we tried to add lag values of the input variables however, they did not improved the model. Therefore, they are not in the final model. At the end, we reached the final model with all significant variables. 
+With this final model, we made predictions for the quarters of the 2007 which are 
+"Prediction for 2007 Q1 is 662492.280517707"
+"Prediction for 2007 Q2 is 845565.070512685"
+"Prediction for 2007 Q3 is 965974.609010775"
+"Prediction for 2007 Q4 is 788131.257443194"
+
+
+
+  
