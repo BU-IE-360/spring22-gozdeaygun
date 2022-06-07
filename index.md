@@ -7,6 +7,6 @@ My HW2 Markdown is [here](files/IE360_HW2.Rmd)
 
 My page is [here](https://bu-ie-360.github.io/spring22-gozdeaygun/)
 
-Our project PDF file is [here](files/IE360_PROJECT_REPORT.pdf)
+Our project PDF file is [here](files/IE360_PROJECT_REPORT_FINAL.pdf)
 
 Our project HTML file is [here](files/IE360_PROJECT_REPORT_Final.html)
